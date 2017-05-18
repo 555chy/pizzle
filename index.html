@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Pizzle 拼图</title>
+	<meta charset="utf8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, maximum-scale=1.0">
+	<style>
+		body {
+			margin: 0px;
+			background-color: #F2F2F2;
+			overflow: hidden;
+		}
+		header, footer {
+			position: relative;
+			background-color: black;
+			color: white;
+			height: 56px;
+			/* 让所有relative对象垂直居中 */
+			line-height: 56px;
+			padding-left: 20px;
+			font-size: 16pt;
+		}
+		footer {
+			display: none;
+		}
+		#switchAside {
+			width: 20px;
+			height: 32px;
+			display: inline-block;
+			vertical-align: middle;
+			margin-right: 20px;
+			/* 由于文字是四线三格，文字靠在第三条线上，而非中央 */
+			margin-top:10px;
+		}
+		#switchAside span {
+			width: 100%;
+			height: 3px;
+			background-color: white;
+			display: block;
+		}
+		/* nth-child(a*n+b)里面符合这个递推公式的都会应用该样式 */
+		#switchAside span:nth-child(n+2) {
+			margin-top: 5px;
+		}
+		#switchNav {
+			width: 4px;
+			height: 32px;
+			/* relative垂直居中对象增加10px margin，absolute对象只需增加5px */
+			top: 17px;
+			right: 0px;
+			display: inline-block;
+			position: absolute;
+			/* 增大接触面积 */
+			padding-left:20px;
+			padding-right:20px;
+		}
+		#switchNav span {
+			width: 100%;
+			height: 3px;
+			background-color: white;
+			display: block;
+			margin-top: 5px;
+		}
+		footer #step{
+			position: absolute;
+			top: 10px;
+			right: 20px;
+			line-height: 32px;
+		}
+		section {
+			position: relative;
+		}
+		#canvas {
+			border: 4px solid #CCCCCC;
+			display: block;
+			margin: 0px auto;
+			background-color: #F2F2F2;
+		}
+		#mask {
+			position: absolute;
+			width: 100%;
+			height: 100%;
+			background-color: rgba(0,0,0,0.5);
+			z-index: 1;
+			display: none;
+		}
+		nav {
+			position: absolute;
+			top: 56px;
+			right: 0px;
+			background-color: rgba(0,0,0,0.6);
+			z-index: 2;
+			transition: height 0.3s ease;
+			overflow: hidden;
+			color: white;
+			font-size: 16pt;
+		}
+		nav div:nth-child(n) {
+			padding: 20px 20px 0px 20px;
+			display: block;
+		}
+		nav div:last-child {
+			padding-bottom: 20px;
+		}
+		aside {
+			position: absolute;
+			top: 56px;
+			background-color: rgba(0,0,0,0.6);
+			z-index: 3;
+			transition: left 0.3s ease;
+			overflow-x: hidden;
+		}
+		aside img {
+			border: 4px solid #CCCCCC;
+		}
+		.selectedImg {
+			border-color: red;
+		}
+	</style>
+</head>
+<body>
+	<header>
+		<a id="switchAside" href="#" onclick="switchAside()">
+			<span></span>
+			<span></span>
+			<span></span>
+		</a>
+		Pizzle 拼图
+		<a id="switchNav" href="#" onclick="switchNav()">
+			<span></span>
+			<span></span>
+			<span></span>
+		</a>
+	</header>
+	<nav class="collapseCls">
+		<div><input id="switchIndexVisibleCb" type="checkbox" onchange="switchIndexVisible(event)">显示索引</div>
+	</nav>
+	<aside class="collapseCls">
+	
+	</aside>
+	<section>
+		<div id="mask" onclick="collapseAll()"></div>
+		<canvas id="canvas">Your browser not support canvas</canvas>
+	</section>
+	<footer>
+		<div id="step"></div>
+	</footer>
+</body>
+<script type="text/javascript">
+	var imgUrlArray = [
+		"http://group.store.qq.com/qun/BS0xEDvzH2UFXErNQlgkNQ!!/V3t99aBItBQFFkYMLsQ/800?w5=640&h5=960&rf=viewer_421",
+		"http://group.store.qq.com/qun/BS0xEDvzH2UFXErNQlgkNQ!!/V3t99aBIs9QFFmksJ0e/800?w5=640&h5=853&rf=viewer_421",
+		"http://group.store.qq.com/qun/BS0xEDvzH2UFXErNQlgkNQ!!/V3t99aBIs5QFFn4Y8gm/800?w5=640&h5=1138&rf=viewer_421",
+		"http://group.store.qq.com/qun/BS0xEDvzH2UFXErNQlgkNQ!!/V3t99aBIs1QFFntnfIs/800?w5=640&h5=960&rf=viewer_421",
+		"http://group.store.qq.com/qun/BS0xEDvzH2UFXErNQlgkNQ!!/V3t99aBIsxQFFnMg.sl/800?w5=960&h5=640&rf=viewer_421",
+		"http://group.store.qq.com/qun/BS0xEDvzH2UFXErNQlgkNQ!!/V3t99aBIstQFFkNvO84/800?w5=725&h5=640&rf=viewer_421",
+	];
+	var imgArray = new Array(imgUrlArray.length);
+	
+	//行数
+	var rowCount = 4;
+	//列数
+	var columnCount = 3;
+	//单元格总数
+	var count;
+	
+	//单元格间隔
+	var padding = 4;
+	var doublePadding = padding * 2;
+	//文字颜色
+	var textColor = "red";
+	
+	//是否按下
+	var isTouchStart = false;
+	//按下时的画布索引
+	var touchIndex = -1;
+	//点击时相对事件目标的坐标
+	var touchX,touchY;
+	
+	//是否绘制在缓存上
+	var IN_CACHE = true;
+	//是否展开所有
+	var IS_EXPAND_ALL;
+		
+	//时间戳差值(避免频繁的move事件，引起频繁的绘制操作)
+	var timestampDiff;
+	/*
+	时间戳
+	(1) Date.parse(new Date())	得到秒*1000为时间戳
+	(2) (new Date()).valueOf()	得到毫秒时间戳
+	(3) new Date().getTime()	得到毫秒时间戳
+	*/
+	var timestamp,lastTimestamp=0;
+	
+	//每个图片块的大小
+	var imgBlockWidth, imgBlockHeight;
+	//每个画布块的大小
+	var canvasBlockWidth, canvasBlockHeight;
+	var canvasBlockWidthWithPadding, canvasBlockHeightWithPadding;
+	var halfCanvasBlockWidth, halfCanvasBlockHeight;
+	
+	//存放当前显示的图像编号
+	var indexArray;
+	
+	var header = document.getElementsByTagName("header")[0];
+	var headerHeight = header.clientHeight;
+	
+	var nav = document.getElementsByTagName("nav")[0];
+	var aside = document.getElementsByTagName("aside")[0];
+	var mask = document.getElementById("mask");
+	var switchNavBtn = document.getElementById("switchNav");
+	var switchAsideBtn = document.getElementById("switchAside");
+	
+	var switchIndexVisibleCb = document.getElementById("switchIndexVisibleCb");
+	
+	var canvas = document.getElementById("canvas");
+	var ctx = canvas.getContext("2d");
+	
+	var stepDiv = document.getElementById("step");
+	
+	//步数
+	var step;
+	
+	//拖动时缓存原始图
+	var cacheCanvas = document.createElement("canvas");
+	var cacheCanvasCtx = cacheCanvas.getContext("2d");
+	//拖动时缓存图块
+	var cacheBlock = document.createElement("canvas");
+	var cacheBlockCtx = cacheBlock.getContext("2d");
+	
+	var canvasWidth = window.innerWidth - doublePadding;
+	//这里header的height不能用computedStyle，只能用clientHeight
+	var canvasHeight = window.innerHeight - header.clientHeight - doublePadding;
+	//避免图像过度拉伸
+	if(canvasWidth > canvasHeight) {
+		canvasWidth = canvasHeight;
+	}
+	
+	cacheCanvas.width = canvas.width = canvasWidth;
+	cacheCanvas.height = canvas.height = canvasHeight;
+	
+	canvasBlockWidthWithPadding = (canvasWidth + padding) / columnCount;
+	canvasBlockHeightWithPadding = (canvasHeight + padding) / rowCount;
+
+	cacheBlock.width = canvasBlockWidth = canvasBlockWidthWithPadding - padding;
+	cacheBlock.height = canvasBlockHeight = canvasBlockHeightWithPadding - padding;
+	
+	halfCanvasBlockWidth = canvasBlockWidth / 2;
+	halfCanvasBlockHeight = canvasBlockHeight / 2;
+		
+	var fontSize = Math.floor((canvasWidth < canvasHeight ? canvasWidth : canvasHeight) / 6); 
+
+	var navHeight = nav.clientHeight;
+	var asideWidth = canvasWidth / 2;
+	aside.style.height = canvasHeight + doublePadding + "px";
+	
+	//动态适配PC和手机布局(苹果6s分辨率：1334*750px)
+	var halfHorizontalLeft = (window.innerWidth - canvasHeight - doublePadding) / 2;
+	if(window.innerWidth > 800 && halfHorizontalLeft > 200) {
+		IS_EXPAND_ALL = true;
+		asideWidth = halfHorizontalLeft;
+		switchNavBtn.style.display = "none";
+		switchAsideBtn.style.display = "none";
+		nav.style.right = "0px";
+		nav.style.width = aside.style.width = asideWidth + "px";
+		nav.style.height = aside.style.height;
+		asideWidth = halfHorizontalLeft;
+	} else {
+		IS_EXPAND_ALL = false;
+		nav.style.height = "0px";
+		aside.style.width = asideWidth + "px";
+		aside.style.left = "-" + aside.style.width;
+	}
+	addImgArrayToAside();
+	if(imgArray[0].complete) {
+		img = imgArray[0];
+		reset();
+	} else {
+		imgArray.onload = function() {
+			img = imgArray[0];
+			reset();
+		}
+	}
+	
+	//将图片添加到滑动栏上
+	function addImgArrayToAside() {
+		for(var i=0; i<imgUrlArray.length; i++) {
+			imgArray[i] = document.createElement("img");
+			imgArray[i].width = asideWidth - doublePadding;
+			imgArray[i].src = imgUrlArray[i];
+			imgArray[i].addEventListener("click", function(event) {
+				for(var j=0; j<imgArray.length; j++) {
+					imgArray[j].removeAttribute("class");
+				}
+				var index = imgArray.indexOf(this);
+				imgArray[index].setAttribute("class", "selectedImg");
+				if(imgArray[index].complete === true) {
+					img = imgArray[index];
+					reset();
+					collapseAll();
+				}
+			});
+			aside.appendChild(imgArray[i]);
+		}
+	}
+
+	//移除所有事件监听器
+	function removeAllListener() {
+		canvas.removeEventListener("mouseleave", onTouch);
+		
+		canvas.removeEventListener("mousedown", onTouch);
+		canvas.removeEventListener("mousemove", onTouch);
+		canvas.removeEventListener("mouseup", onTouch);
+		
+		canvas.removeEventListener("touchstart", onTouch);
+		canvas.removeEventListener("touchmove", onTouch);
+		canvas.removeEventListener("touchend", onTouch);
+	}
+	
+	//当图片加载完成后，重置当前状态
+	function reset() {
+		removeAllListener();
+		//获取图片原始宽高进行计算
+		imgBlockWidth = img.naturalWidth / columnCount;
+		imgBlockHeight = img.naturalHeight / rowCount;
+		
+		count = rowCount * columnCount;
+		indexArray = new Array(count);
+		for(var i=0; i<indexArray.length; i++) {
+			indexArray[i] = i;
+		}
+		//伪随机排序
+		//indexArray.sort(function(){ return 0.5 - Math.random() })
+		shuffle(indexArray);
+		console.log(indexArray);
+		
+		drawMesh();
+		
+		for(var i=0; i<indexArray.length; i++) {
+			drawBlock(i);
+		}
+		
+		step = -1;
+		recordStep();
+		
+		//不论鼠标指针离开被选元素还是任何子元素，都会触发 mouseout 事件
+		//canvas.addEventListener("mouseout", onTouch);
+		//只有在鼠标指针离开被选元素时，才会触发 mouseleave 事件
+		canvas.addEventListener("mouseleave", onTouch);
+		
+		canvas.addEventListener("mousedown", onTouch, false);
+		canvas.addEventListener("mousemove", onTouch, false);
+		canvas.addEventListener("mouseup", onTouch, false);
+		
+		canvas.addEventListener("touchstart", onTouch, false);
+		canvas.addEventListener("touchmove", onTouch, false);
+		canvas.addEventListener("touchend", onTouch, false);
+	}
+	
+	// The shuffle modifies the original array calling array.slice(0) creates a copy, which is assigned to newArray
+	function shuffle(array) {
+		var currentIndex = array.length, temporaryValue, randomIndex;
+		// While there remain elements to shuffle...
+		while (0 !== currentIndex) {
+			// Pick a remaining element...
+			randomIndex = Math.floor(Math.random() * currentIndex);
+			currentIndex -= 1;
+			// And swap it with the current element.
+			temporaryValue = array[currentIndex];
+			array[currentIndex] = array[randomIndex];
+			array[randomIndex] = temporaryValue;
+		}
+		return array;
+	}
+
+	//绘制网格
+	function drawMesh() {
+		var pos;
+		var halfPadding = padding / 2;
+		//css虽然设置了border-color，但是这个color会被分别设置到每一条边，所以单用border-color是获取不到的
+		ctx.strokeStyle = window.getComputedStyle(canvas).borderBottomColor;
+		//ctx.strokeStyle = window.getComputedStyle(canvas).getPropertyValue("border-bottom-color");
+		ctx.lineWidth = padding;
+		//canvas绘制直线时是从直线的中点开始绘制的
+		for(var i=1; i<rowCount; i++) {
+			pos = canvasBlockHeightWithPadding * i - halfPadding;
+			ctx.beginPath();
+			ctx.moveTo(0, pos);
+			ctx.lineTo(canvasWidth, pos);
+			ctx.stroke();
+		}
+		for(var i=1; i<columnCount; i++) {
+			pos = canvasBlockWidthWithPadding * i - halfPadding;
+			ctx.beginPath();
+			ctx.moveTo(pos, 0);
+			ctx.lineTo(pos, canvasHeight);
+			ctx.stroke();
+		}
+	}
+	
+	//获取索引块相对图像左上角的坐标
+	function getImagePositionByIndex(index) {
+		var x = index % columnCount;
+		var y = Math.floor(index / columnCount);
+		var posX = x * imgBlockWidth;
+		var posY = y * imgBlockHeight;
+		return [posX, posY];
+	}
+	
+	//获取索引块相对画布左上角的坐标
+	function getCanvasPositionByIndex(index) {
+		var x = index % columnCount;
+		var y = Math.floor(index / columnCount);
+		var posX = x * canvasBlockWidthWithPadding;
+		var posY = y * canvasBlockHeightWithPadding;
+		return [posX, posY];
+	}
+
+	//在画布块中绘制图片
+	function drawBlock(index, isInCache) {
+		var imgPos = getImagePositionByIndex(indexArray[index]);
+		if(isInCache !== undefined && isInCache) {
+			cacheBlockCtx.drawImage(img, imgPos[0], imgPos[1], imgBlockWidth, imgBlockHeight, 0, 0, canvasBlockWidth, canvasBlockHeight);
+		} else {
+			var canvasPos = getCanvasPositionByIndex(index);
+			ctx.drawImage(img, imgPos[0], imgPos[1], imgBlockWidth, imgBlockHeight, canvasPos[0], canvasPos[1], canvasBlockWidth, canvasBlockHeight);
+		}
+		drawIndex(index, isInCache);
+	}
+	
+	//清除某个画布块中的图像
+	function clearBlock(paramCtx, index) {
+		var canvasPos = getCanvasPositionByIndex(index);	
+		paramCtx.clearRect(canvasPos[0], canvasPos[1], canvasBlockWidth, canvasBlockHeight);
+	}
+	
+	//在图的第index区域中心，绘制索引
+	function drawIndex(index, isInCache) {
+		if(!switchIndexVisibleCb.checked) {
+			return;
+		}
+		var tmpCtx;
+		var canvasPos = [0, 0];
+		if(isInCache === undefined || !isInCache) {
+			canvasPos = getCanvasPositionByIndex(index);
+			tmpCtx = ctx;
+		} else {
+			tmpCtx = cacheBlockCtx;
+		}
+		tmpCtx.fillStyle = textColor;
+		//Horizontal alignment: center | start | end | left | right
+		tmpCtx.textAlign = "center";
+		//Vertical alignment: top | hanging | middle | alphabetic | ideographic | bottom
+		tmpCtx.textBaseline = "middle";
+		tmpCtx.font = "bold " + fontSize + "px Arial";
+		
+		var x = canvasPos[0] + halfCanvasBlockWidth;
+		var y = canvasPos[1] + halfCanvasBlockHeight;
+		tmpCtx.fillText(indexArray[index], x, y);
+	}
+	
+	//切换是否显示索引
+	function switchIndexVisible() {
+		for(var i=0;i<indexArray.length;i++) {
+			drawBlock(i);
+		}
+	}
+	
+	//根据当前鼠标位置，获取索引(-1表示不在正常范围内)
+	function getCanvasIndexByPosition(x, y) {
+		if(x < 0 || x > canvasWidth || y < 0 || y > canvasHeight) {
+			return -1;
+		}
+		return Math.floor(x / canvasBlockWidthWithPadding) + Math.floor(y / canvasBlockHeightWithPadding) * columnCount;
+	}
+	
+	function onTouch(event) {
+		if(event.touches) {
+			//touchend拿不到坐标点
+			if(event.touches.length > 0) {
+				touchX = event.touches[0].pageX;
+				touchY = event.touches[0].pageY - headerHeight;
+			}
+		} else {
+			touchX = event.offsetX;
+			touchY = event.offsetY;
+		}
+		//console.log(event.type)
+		switch(event.type) {
+			case "mousedown":
+			case "touchstart":
+				touchIndex = getCanvasIndexByPosition(touchX, touchY);
+				if(touchIndex !== -1) {
+					cacheAfterTouch();
+				}
+				break;
+			case "mousemove":
+			case "touchmove":
+				if(touchIndex !== -1) {
+					timestamp = new Date().getTime();
+					diffTimestamp = timestamp - lastTimestamp;
+					if(diffTimestamp > 100) {
+						lastTimestamp = timestamp;
+						ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+						ctx.drawImage(cacheCanvas, 0, 0);
+						ctx.drawImage(cacheBlock, touchX - halfCanvasBlockWidth, touchY - halfCanvasBlockHeight);
+					}
+				}
+				break;
+			case "mouseup":
+			case "touchend":
+				if(touchIndex != -1) {
+					var changeIndex = getCanvasIndexByPosition(touchX, touchY);
+					restoreAfterTouch(changeIndex);
+					recordStep();
+				}
+				break;
+			case "mouseleave":
+				restoreAfterTouch(-1);
+				break;
+		}
+	}
+	
+	function cacheAfterTouch() {
+		if(touchIndex !== -1) {
+			//缓存图块
+			drawBlock(touchIndex, IN_CACHE);
+			//缓存画布
+			cacheCanvasCtx.drawImage(canvas, 0, 0);
+			//清除触摸块
+			clearBlock(cacheCanvasCtx, touchIndex);
+		}
+	}
+	
+	function restoreAfterTouch(changeIndex) {
+		if(touchIndex !== -1) {
+			ctx.drawImage(cacheCanvas, 0, 0);
+			if(changeIndex === -1 || touchIndex === changeIndex) {
+				drawBlock(touchIndex);
+			} else {
+				swapBlock(touchIndex, changeIndex);
+			}
+			touchIndex = -1;
+		}
+	}
+	
+	//交换当前画布上的两个图块
+	function swapBlock(index1, index2) {
+		var tmp = indexArray[index1];
+		indexArray[index1] = indexArray[index2];
+		indexArray[index2] = tmp;
+		
+		drawBlock(index1);
+		drawBlock(index2);
+	}
+	
+	//关闭"侧滑栏"和"导航栏"
+	function collapseAll() {
+		if(IS_EXPAND_ALL) {
+			return;
+		}
+		mask.style.display = "none";
+		nav.style.height = "0px";
+		aside.style.left = "-" + aside.style.width;
+	}
+	
+	//切换"导航栏"打开和关闭的状态
+	function switchNav() {
+		//注意string值默认为空，而不是undefined
+		var isHidden = nav.style.height === "" || nav.style.height === "0px";
+		collapseAll();
+		if(isHidden) {
+			mask.style.display = "block";
+			nav.style.height = navHeight + "px";
+		}
+	}
+	
+	//切换"侧滑栏"打开和关闭的状态
+	function switchAside() {
+		var isHidden = aside.style.left === "" || aside.style.left !== "0px";
+		collapseAll();
+		if(isHidden) {
+			mask.style.display = "block";
+			aside.style.left = "0px";
+		}
+	}
+	
+	//步数加一，同时更新显示
+	function recordStep() {
+		step++;
+		var stepStr = step.toString();
+		//补全到3位
+		var left = 3 - stepStr.length;
+		while(left > 0) {
+			//两个空格是一个字符的宽度，一个汉字占两字符宽度
+			stepStr = "&nbsp;&nbsp;" + stepStr;
+			left--;
+		}
+		stepDiv.innerHTML = "步数：" + stepStr;
+	}
+</script>
+</html>
